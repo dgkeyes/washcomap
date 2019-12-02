@@ -1,15 +1,28 @@
 Package: washcomap
-Title: What the Package Does (One Line, Title Case)
+Title: Washington County Map
 Version: 0.0.0.9000
 Authors@R: 
-    person(given = "First",
-           family = "Last",
+    person(given = "David",
+           family = "Keyes",
            role = c("aut", "cre"),
-           email = "first.last@example.com",
+           email = "david@rfortherestofus.com",
            comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-License: What license it uses
+Description: Makes map for Washington County.
+License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 URL: https://github.com/dgkeyes/washcomap
 BugReports: https://github.com/dgkeyes/washcomap/issues
+RoxygenNote: 7.0.0
+Imports: 
+    tibble,
+    magrittr,
+    dplyr,
+    mapdeck,
+    tidyr,
+    janitor,
+    readxl
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr

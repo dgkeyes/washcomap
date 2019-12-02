@@ -1,2 +1,6 @@
 ^washcomap\.Rproj$
 ^\.Rproj\.user$
+^data-raw$
+^LICENSE\.md$
+^doc$
+^Meta$

@@ -1,0 +1,99 @@
+---
+title: "Washington County Map"
+output:
+  distill::distill_article:
+    self_contained: TRUE
+    toc: FALSE
+    style: style.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      error = FALSE,
+                      cache = TRUE,
+                      self_contained = TRUE,
+                      fig.height = 6,
+                      out.width = "100%")
+```
+
+```{r packages}
+library(tidyverse)
+library(tidycensus)
+library(janitor)
+library(scales)
+library(sf)
+library(tigris)
+library(leaflet)
+library(mapdeck)
+```
+
+# Race/Ethnicity
+
+One map for each group based on previous spreadsheet
+
+```{r, layout="l-screen-inset"}
+
+mapdeck(style = mapdeck_style("light"),
+        token = "pk.eyJ1IjoiZGdrZXllcyIsImEiOiJ2WGFJQ2U0In0.ftoZlfudaEIJL7OEf-Mw3Q",
+        pitch = 25,
+        location = c(-123.096819, 45.5),
+        zoom = 9)
+# %>% 
+#   add_sf(data = non_white,
+#          tooltip = "school",
+#          fill_colour = "mdn_vl_",
+#          fill_opacity = 150,
+#          stroke_width = 50,
+#          stroke_colour = "#ffffff",
+#          auto_highlight = TRUE,
+#          update_view = FALSE,
+#          palette = "magma",
+#          highlight_colour = "#ffffff99",
+#          na_colour = "#fafafa",
+#          legend = list(fill_colour = TRUE),
+#          legend_options = list(title = "Non-White Students"))
+```
+
+# Poverty
+
+
+
+## 100% FPL
+
+One map for schools
+
+## 200% FPL
+
+Still do this map for individual schools even though not for composite score
+
+# Single-Parent Families
+
+Make map
+
+# SNAP
+
+Just SNAP
+
+# Disability (EI/ESCE)
+
+As table if just at district level
+Mapped if at elementary school catchment area
+
+# Homelessness
+
+Evan is going to send it to me
+
+# Composite Map
+
+Calculate score with:
+
+- Racial/ethnic diversity
+- 100% FPL
+- Single-parent families
+- SNAP
+- Rent burden
+
+
+
