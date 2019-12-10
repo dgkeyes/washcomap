@@ -21,7 +21,10 @@ Imports:
     mapdeck,
     tidyr,
     janitor,
-    readxl
+    readxl,
+    stringr,
+    purrr,
+    reactable
 Suggests: 
     knitr,
     rmarkdown

@@ -4,7 +4,7 @@
 \alias{make_map}
 \title{Title}
 \usage{
-make_map(df, tooltip_col)
+make_map(df)
 }
 \arguments{
 \item{tooltip_col}{}

@@ -1,0 +1,604 @@
+---
+title: "Data Import and Cleaning"
+output:
+  distill::distill_article:
+    self_contained: TRUE
+    toc: TRUE
+    code_folding: hide
+    style: style.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      include = TRUE,
+                      # cache = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+This document describes how I imported and cleaned all of the data for the Washington County Map.
+
+# Packages
+
+These are the packages I used.
+
+```{r}
+library(sf)
+library(tidyverse)
+library(tidycensus)
+library(janitor)
+library(scales)
+library(readxl)
+library(tigris)
+library(oregoneddata)
+library(zip)
+library(devtools)
+library(ggmap)
+library(rmarkdown)
+library(here)
+
+load_all()
+```
+
+# Geospatial Data
+
+## Washington County Districts
+
+These are the school districts they are using. This comes from email correspondence with Evan.
+
+```{r}
+wash_co_districts <- c("Banks",
+                       "Beaverton",
+                       "Forest Grove",
+                       "Gaston",
+                       "Hillsboro",
+                       "Sherwood",
+                       "Tigard-Tualatin")
+
+use_data(wash_co_districts,
+         overwrite = TRUE)
+```
+
+## Washington County Schools
+
+I'm getting this data so that I can do merges later on. It comes from my `oregoneddata` package.
+
+```{r}
+wash_co_schools_all <- ored_enrollment_by_school %>%
+  separate(district,
+           into = c("district", "to_drop"),
+           sep = " SD") %>%
+  select(-c(to_drop, enrollment)) %>%
+  mutate(school = case_when(
+    school == "Groner K-8" ~ "Groner Elementary School",
+    TRUE ~ school
+  )) %>%
+  filter(district %in% wash_co_districts)
+```
+
+
+Getting this from data that Evan shared. I then merge the wash_co_schools data frame from above to add things like school and district id variables.
+
+```{r}
+wash_co_schools <- c("McKinley Elementary School", "Aloha-Huber Park School", "Barnes Elementary School", "Kinnaman Elementary School", "Elmonica Elementary School", "Beaver Acres Elementary School", "Lenox Elementary School", "Cornelius Elementary School", "Metzger Elementary School", "Vose Elementary School", "Fir Grove Elementary School", "Lincoln Street Elementary School", "Hazeldale Elementary School", "Charles F Tigard Elementary School", "Chehalem Elementary School", "Witch Hazel Elementary School", "Nancy Ryles Elementary School", "Durham Elementary School", "Echo Shaw Elementary School", "William Walker Elementary School", "James Templeton Elementary School", "Joseph Gale Elementary School", "McKay Elementary School", "W Verne McKinney Elementary School", "West Union Elementary School", "Greenway Elementary School", "Mooberry Elementary School", "Reedville Elementary School", "Eastwood Elementary School", "Minter Bridge Elementary School", "Deer Creek Elementary School", "Raleigh Park Elementary School", "W L Henry Elementary School", "Errol Hassell Elementary School", "Tualatin Elementary School", "Tobias Elementary School", "Fern Hill Elementary School", "Bridgeport Elementary School", "Rosedale Elementary School", "Cooper Mountain Elementary School", "Springville K-8 School", "Raleigh Hills Elementary School", "Harvey Clarke Elementary School", "Ridgewood Elementary School", "Alberta Rider Elementary School", "Mary Woodward Elementary School", "North Plains Elementary School", "Oak Hills Elementary School", "Sexton Mountain Elementary School", "Butternut Creek Elementary School", "Imlay Elementary School", "Orenco Elementary School", "Brookwood Elementary School", "Quatama Elementary School", "Hiteon Elementary School", "Free Orchards Elementary School", "Farmington View Elementary School", "Cedar Mill Elementary School", "Jackson Elementary School", "Scholls Heights Elementary School", "Middleton Elementary School", "Indian Hills Elementary School", "Edward Byrom Elementary School", "Montclair Elementary School", "Edy Ridge Elementary School", "Banks Elementary School", "Groner Elementary School", "Dilley Elementary School", "J Clyde Hopkins Elementary School", "Ladd Acres Elementary School", "Bethany Elementary School", "Terra Linda Elementary School", "Rock Creek Elementary School", "Findley Elementary", "Paul L Patterson Elementary School", "Gaston Elementary School", "Bonny Slope Elementary School", "Jacob Wismer Elementary School", "West Tualatin View Elementary School") %>%
+  tibble() %>%
+  set_names("school") %>%
+  left_join(wash_co_schools_all, by = "school")
+
+use_data(wash_co_schools,
+         overwrite = TRUE)
+```
+## School Catchment Shapefiles
+
+I needed shapefiles for the elementary school catchment areas for all Washington County schools. I downloaded data from the [State of Oregon](https://spatialdata.oregonexplorer.info/geoportal/details;id=1270fe6e833f4d0eabacc71300069738), which I then used.
+
+```{r}
+wash_co_school_catchment_areas <- st_read(here("data-raw/SchoolYear_2015_2016.gdb"),
+                                          layer = "EDUCATIONAL_BOUNDARIES") %>%
+  clean_names() %>%
+  filter(grade_k_id %in% wash_co_schools$school_id) %>%
+  separate(school_district_name_1,
+           into = c("district", "to_drop"),
+           sep = " SD") %>%
+  mutate(district = str_to_title(district)) %>%
+  select(district, school_district_institution_id, grade_k_name, grade_k_id) %>%
+  rename("district_id" = "school_district_institution_id",
+         "school" = "grade_k_name",
+         "school_id" = "grade_k_id") %>%
+  # Dissolved boundaries using https://philmikejones.me/tutorials/2015-09-03-dissolve-polygons-in-r/
+  group_by(school_id) %>%
+  summarize() %>%
+  ungroup() %>%
+  mutate(row = row_number()) %>%
+  select(row, school_id, Shape) %>%
+  rename("geometry" = "Shape") %>%
+  st_as_sf(sf_column_name = "geometry") %>%
+  st_cast(to = "MULTIPOLYGON") %>% 
+  st_transform(crs = 4326)
+
+use_data(wash_co_school_catchment_areas,
+         overwrite = TRUE)
+```
+
+
+
+## ZCTA Shapefiles
+
+I need to download ZCTA shapefiles for all zips within Washington County. 
+
+I got list of zips from [here](http://www.ciclt.net/sn/clt/capitolimpact/gw_ziplist.aspx?FIPS=41067)
+
+```{r}
+wash_co_zips <- tibble::tribble(
+  ~Zip.Code,          ~City,             ~County,
+  97005,    "Beaverton", "Washington County",
+  97006,    "Beaverton", "Washington County",
+  97006,        "Aloha", "Washington County",
+  97007,    "Beaverton", "Washington County",
+  97007,        "Aloha", "Washington County",
+  97008,    "Beaverton", "Washington County",
+  97062,     "Tualatin", "Washington County",
+  97075,    "Beaverton", "Washington County",
+  97076,    "Beaverton", "Washington County",
+  97106,        "Banks", "Washington County",
+  97109,        "Banks", "Washington County",
+  97109,       "Buxton", "Washington County",
+  97113,    "Cornelius", "Washington County",
+  97116,     "Glenwood", "Washington County",
+  97116, "Forest Grove", "Washington County",
+  97117,  "Gales Creek", "Washington County",
+  97119,       "Gaston", "Washington County",
+  97123,    "Hillsboro", "Washington County",
+  97124,    "Hillsboro", "Washington County",
+  97125,        "Banks", "Washington County",
+  97125,      "Manning", "Washington County",
+  97133, "North Plains", "Washington County",
+  97140,     "Sherwood", "Washington County",
+  97144,       "Timber", "Washington County",
+  97223,     "Portland", "Washington County",
+  97223,       "Tigard", "Washington County",
+  97224,     "Portland", "Washington County",
+  97224,       "Tigard", "Washington County",
+  97225,     "Portland", "Washington County",
+  97229,     "Portland", "Washington County",
+  97281,     "Portland", "Washington County",
+  97281,       "Tigard", "Washington County",
+  97291,     "Portland", "Washington County",
+  97298,     "Portland", "Washington County"
+) %>%
+  pull(Zip.Code) %>%
+  c(97078, 97003, 97056, 97064, 97231, 97132) %>%
+  unique()
+
+use_data(wash_co_zips,
+         overwrite = TRUE)
+```
+
+I then used the `tidycensus` package to download all ZCTAs in the US, then filter it to only include those in Washington County.
+
+```{r}
+wash_co_zctas <- zctas() %>%
+  clean_names() %>%
+  filter(zcta5ce10 %in% wash_co_zips) %>%
+  mutate(row = row_number()) %>%
+  select(row, zcta5ce10, geometry) %>%
+  rename("zip_code" = "zcta5ce10") %>%
+  st_transform(crs = 4326)
+
+use_data(wash_co_zctas,
+         overwrite = TRUE)
+```
+
+## Census Tracts
+
+I now download shapefiles for all census tracts within Washington County. This data comes from the `tidycensus` package.
+
+```{r}
+wash_co_census_tracts <- tracts(state = "OR",
+                                county = "Washington") %>%
+  clean_names() %>%
+  mutate(row = row_number()) %>%
+  select(row, geoid, geometry) %>%
+  rename("census_tract" = "geoid") %>%
+  st_transform(crs = 4326)
+
+use_data(wash_co_census_tracts,
+         overwrite = TRUE)
+```
+
+## Overlaps
+
+I need to calculate overlaps between:
+
+1. School catchment areas and ZCTAS
+
+```{r}
+overlaps_zcta <- st_intersects(wash_co_school_catchment_areas,
+                               wash_co_zctas) %>%
+  as_tibble() %>%
+  set_names(c("school_catchment_row_id",
+              "zcta_row_id")) %>%
+  left_join(wash_co_school_catchment_areas, by = c("school_catchment_row_id" = "row")) %>%
+  select(-geometry) %>%
+  left_join(wash_co_zctas, by = c("zcta_row_id" = "row")) %>%
+  select(-geometry) %>%
+  left_join(wash_co_schools, by = "school_id") %>%
+  select(school_id, school, zip_code)
+
+use_data(overlaps_zcta,
+         overwrite = TRUE)
+```
+
+1. School catchment areas and census tracts
+
+```{r}
+overlaps_census_tracts <- st_intersects(wash_co_school_catchment_areas,
+                                        wash_co_census_tracts) %>%
+  as_tibble() %>%
+  set_names(c("school_catchment_row_id",
+              "census_tract_row_id")) %>%
+  left_join(wash_co_school_catchment_areas, by = c("school_catchment_row_id" = "row")) %>%
+  select(-geometry) %>%
+  left_join(wash_co_census_tracts, by = c("census_tract_row_id" = "row")) %>%
+  select(-geometry) %>%
+  left_join(wash_co_schools, by = "school_id") %>%
+  select(school_id, school, census_tract)
+
+use_data(overlaps_census_tracts,
+         overwrite = TRUE)
+```
+
+
+## Schools
+
+I downloaded data from the [State of Oregon](https://www.ode.state.or.us/instID/Default/Index) and geocoded it using the `ggmaps` package.
+
+```{r eval = FALSE}
+wash_co_schools_geocoded <- read_csv(here("data-raw/Institution_Search_Results.csv")) %>%
+  clean_names() %>%
+  filter(institution_id %in% wash_co_schools$school_id) %>%
+  distinct(institution_id, .keep_all = TRUE) %>%
+  left_join(wash_co_schools, by = c("institution_id" = "school_id")) %>%
+  select(institution_id, school:district, street_str_addr1:street_zip) %>%
+  rename("school_id" = "institution_id") %>%
+  mutate(address = str_glue("{street_str_addr1} {street_city}, {street_state} {street_zip}")) %>%
+  select(-c(street_str_addr1:street_zip)) %>%
+  mutate_geocode(address) %>%
+  st_as_sf(coords = c("lon", "lat")) %>%
+  st_set_crs(4326)
+
+use_data(wash_co_schools_geocoded,
+         overwrite = TRUE)
+```
+
+# Child Care Providers
+
+I'm importing data on child care providers who get ERDC funding.
+
+```{r}
+child_care_providers_erdc <- read_excel(here("data-raw/Subsidized Care.xlsx"),
+                                        sheet = "ERDC by Zip",
+                                        skip = 1) %>%
+  set_names(c("zip_code", "number")) %>% 
+  filter(zip_code != "Grand Total") %>% 
+  filter(zip_code %in% wash_co_zips) %>% 
+  left_join(overlaps_zcta) %>% 
+  group_by(school_id) %>%
+  summarize(number_of_providers = mean(number)) %>% 
+  left_join(wash_co_schools) %>% 
+  select(school_id, school, district_id, district, number_of_providers)
+
+use_data(child_care_providers_erdc,
+         overwrite = TRUE)
+```
+
+I'm importing data on head start providers.
+
+```{r}
+head_start_providers <- read_excel(here("data-raw/Subsidized Care.xlsx"),
+                                   sheet = "Head Start",
+                                   skip = 1) %>%
+  set_names(c("zip_code", "number")) %>% 
+  filter(zip_code != "Grand Total") %>% 
+  filter(zip_code %in% wash_co_zips) %>% 
+  mutate(number = replace_na(number, 0)) %>% 
+  left_join(overlaps_zcta) %>% 
+  group_by(school_id) %>%
+  summarize(number_of_providers = mean(number)) %>% 
+  left_join(wash_co_schools) %>% 
+  select(school_id, school, district_id, district, number_of_providers)
+
+use_data(head_start_providers,
+         overwrite = TRUE)
+```
+
+## Child Care Capacity
+
+This data comes from the Center for American Progress. Evan emailed them and got it directly.
+
+```{r}
+child_care_capacity <- read_excel(here("data-raw/CAP_childcaredeserts_WashingtonOR.xlsx")) %>% 
+  mutate(capacity_ratio = capacity / pop_u5) %>% 
+  mutate(census_tract = str_glue("{countyfips}0{tractcode}")) %>% 
+  mutate(census_tract = as.character(census_tract)) %>% 
+  select(census_tract, capacity_ratio) %>% 
+  mutate(median_value_raw = median(capacity_ratio, na.rm = TRUE)) %>% 
+  mutate(median_value = capacity_ratio / median_value_raw) %>% 
+  join_with_census_tract_overlaps() %>%
+  make_median_value_categorical() %>% 
+  # Reverse them so they fit pattern of other measures
+  mutate(median_value_categorical = case_when(
+      median_value_categorical == "4th Tier" ~ "1st Tier",
+      median_value_categorical == "3rd Tier" ~ "2nd Tier",
+      median_value_categorical == "2nd Tier" ~ "3rd Tier",
+      median_value_categorical == "1st Tier" ~ "4th Tier",
+      median_value_categorical == "Below Median" ~ "Below Median"
+    ))
+
+use_data(child_care_capacity,
+         overwrite = TRUE)
+```
+
+
+# Disability
+
+```{r}
+disability <- read_excel(here("data-raw/Disability by Elementary.xlsx")) %>%
+  clean_names() %>%
+  left_join(wash_co_schools, by = c("school_name" = "school")) %>%
+  select(school_id, school_name, district_id, district, median_value, students_with_disabilities) %>%
+  mutate(median_value_raw = median(students_with_disabilities)) %>% 
+  rename("school" = "school_name") %>%
+  filter(school_id %in% wash_co_schools$school_id) %>% 
+  make_median_value_categorical()
+
+use_data(disability,
+         overwrite = TRUE)
+```
+
+# Homeless
+
+```{r}
+homeless <- read_excel(here("data-raw/PreK Homeless by Zip.xlsx")) %>%
+  clean_names() %>%
+  select(zip:median_value) %>%
+  rename("zip_code" = "zip") %>%
+  mutate(median_value_raw = median(pop_count, na.rm = TRUE)) %>%
+  join_with_zcta_overlaps() %>% 
+  make_median_value_categorical()
+
+use_data(homeless,
+         overwrite = TRUE)
+```
+
+# Poverty
+
+First, I figure out which variables are related to 100% + 200% FPL.
+
+```{r}
+poverty_variables <- load_variables(2017, "acs5", cache = TRUE) %>%
+  filter(str_detect(name, "B17024")) %>%
+  filter(str_detect(label, "Under 6 years")) %>%
+  filter(name != "B17024_002") %>%
+  select(-concept)
+```
+
+Then I write a function to get data for each variable and run it across all of these variables to create a large data frame with all the poverty data. 
+
+```{r}
+dk_get_100_200_poverty_data <- function(variable) {
+  
+  get_acs(state = "OR",
+          county = "Washington",
+          geography = "tract",
+          summary_var = "B17024_002",
+          variables = variable)
+}
+
+children_in_poverty <- map_df(poverty_variables$name, dk_get_100_200_poverty_data) %>%
+  clean_names() %>%
+  set_names(c("geoid",
+              "census_tract",
+              "variable",
+              "children_under_6_in_poverty_n",
+              "children_under_6_in_poverty_moe",
+              "total_children_under_6",
+              "total_children_under_moe")) %>%
+  left_join(poverty_variables, by = c("variable" = "name"))
+```
+
+I then do some wrangling to get the percent of kids in poverty in each census tract.
+
+```{r}
+total_children_under_6 <- children_in_poverty %>%
+  select(geoid, total_children_under_6) %>%
+  distinct(geoid, .keep_all = TRUE)
+
+children_in_poverty <- children_in_poverty %>%
+  mutate(poverty_level = case_when(
+    variable %in% c("B17024_003", "B17024_004", "B17024_005") ~ "Up to 100% FPL",
+    variable %in% c("B17024_006", "B17024_007", "B17024_008", "B17024_009", "B17024_010") ~ "Between 100% and 200% FPL",
+    TRUE ~ "At 200% FPL or Above"
+  )) %>%
+  group_by(geoid, poverty_level) %>%
+  summarize(children_under_6_in_poverty_n = sum(children_under_6_in_poverty_n)) %>%
+  ungroup() %>%
+  left_join(total_children_under_6, by = "geoid") %>%
+  mutate(children_under_6_in_poverty_pct = children_under_6_in_poverty_n / total_children_under_6) %>%
+  rename("census_tract" = "geoid")
+
+```
+
+## 100% FPL
+
+I then filter to only include 100% FPL variables.
+
+```{r}
+children_in_poverty_100_fpl <- children_in_poverty %>%
+  filter(poverty_level == "Up to 100% FPL") %>%
+  select(census_tract, children_under_6_in_poverty_pct) %>%
+  mutate(median = median(children_under_6_in_poverty_pct)) %>%
+  mutate(median_value = children_under_6_in_poverty_pct / median) %>%
+  mutate(median_value_raw = median(children_under_6_in_poverty_pct)) %>% 
+  join_with_census_tract_overlaps() %>% 
+  make_median_value_categorical()
+
+use_data(children_in_poverty_100_fpl,
+         overwrite = TRUE)
+```
+
+
+## 200% FPL
+
+I then filter to only include 200% FPL variables.
+
+```{r}
+children_in_poverty_200_fpl <- children_in_poverty %>%
+  filter(poverty_level == "Between 100% and 200% FPL") %>%
+  select(census_tract, children_under_6_in_poverty_pct) %>%
+  mutate(median = median(children_under_6_in_poverty_pct)) %>%
+  mutate(median_value = children_under_6_in_poverty_pct / median) %>%
+  mutate(median_value_raw = median(children_under_6_in_poverty_pct)) %>% 
+  join_with_census_tract_overlaps() %>% 
+  make_median_value_categorical()
+
+use_data(children_in_poverty_200_fpl,
+         overwrite = TRUE)
+```
+
+# Race/Ethnicity
+
+This data comes from Adam at Washington County.
+
+```{r}
+race_ethnicity_composite <- read_excel(here("data-raw/Health Share Counts Combined.xlsx"),
+                                       sheet = "Composite new") %>%
+  clean_names() %>%
+  set_names(c("school", "median_value")) %>%
+  left_join(wash_co_schools, by = "school") %>%
+  select(school_id, school, district_id, district, median_value) %>%
+  make_median_value_categorical()
+
+use_data(race_ethnicity_composite,
+         overwrite = TRUE)
+
+race_ethnicity_black <- import_race_ethnicity_data("Black") %>% 
+  make_median_value_categorical() 
+
+use_data(race_ethnicity_black,
+         overwrite = TRUE) 
+
+race_ethnicity_aian <- import_race_ethnicity_data("AIAN") %>%
+  make_median_value_categorical()
+
+use_data(race_ethnicity_aian,
+         overwrite = TRUE)
+
+race_ethnicity_asian <- import_race_ethnicity_data("Asian") %>%
+  make_median_value_categorical()
+
+use_data(race_ethnicity_asian,
+         overwrite = TRUE)
+
+race_ethnicity_white <- import_race_ethnicity_data("Caucasian") %>%
+  make_median_value_categorical()
+
+use_data(race_ethnicity_white,
+         overwrite = TRUE)
+
+race_ethnicity_latino <- import_race_ethnicity_data("Hispanic") %>%
+  make_median_value_categorical()
+
+use_data(race_ethnicity_latino,
+         overwrite = TRUE)
+
+race_ethnicity_other <- import_race_ethnicity_data("Other") %>%
+  make_median_value_categorical()
+
+use_data(race_ethnicity_other,
+         overwrite = TRUE)
+```
+
+# Single Parent Families
+
+```{r}
+single_parent_variables <- load_variables(2017, "acs5", cache = TRUE) %>%
+  filter(str_detect(name, "B23008")) %>%
+  filter(str_detect(label, "Under 6 years")) %>%
+  filter(name != "B23008_002")
+
+dk_get_single_parent_data <- function(variable) {
+  
+  get_acs(state = "OR",
+          county = "Washington",
+          geography = "tract",
+          summary_var = "B23008_002",
+          variables = variable)
+}
+
+single_parent <- map_df(single_parent_variables$name, dk_get_single_parent_data) %>%
+  clean_names() %>%
+  left_join(single_parent_variables, by = c("variable" = "name")) %>%
+  mutate(family_type = case_when(
+    str_detect(label, "two parents") ~ "Two parents",
+    TRUE ~ "Single parent"
+  )) %>%
+  group_by(geoid, family_type) %>%
+  summarize(n = sum(estimate),
+            total = sum(summary_est)) %>%
+  ungroup() %>%
+  filter(family_type == "Single parent") %>%
+  mutate(single_parent_pct = n / total) %>%
+  select(geoid, n, total, single_parent_pct) %>%
+  rename("census_tract" = "geoid") %>%
+  mutate(median_value_raw = median(single_parent_pct)) %>%
+  mutate(median_value = single_parent_pct / median_value_raw) %>%
+  join_with_census_tract_overlaps() %>% 
+  make_median_value_categorical()
+
+use_data(single_parent,
+         overwrite = TRUE)
+```
+
+# SNAP
+
+```{r}
+snap <- read_excel(here("data-raw/DHS Data by Zip Code.xlsx")) %>%
+  clean_names() %>%
+  select(zip_code, snap_children) %>%
+  mutate(median_value_raw = median(snap_children)) %>%
+  mutate(median_value = snap_children / median_value_raw) %>%
+  select(-snap_children) %>%
+  join_with_zcta_overlaps() %>% 
+  make_median_value_categorical()
+
+use_data(snap,
+         overwrite = TRUE)
+```
+
+# Composite Score
+
+Score is calculated as the mean of the median
+
+- Racial/ethnic diversity composite
+- 100% FPL
+- Single-parent families
+- SNAP
+- Homelessness
+
+```{r}
+composite_score <- bind_rows(children_in_poverty_100_fpl,
+                             race_ethnicity_composite,
+                             single_parent,
+                             snap,
+                             homeless) %>% 
+  group_by(school) %>% 
+  summarize(median_value = median(median_value)) %>% 
+  left_join(wash_co_schools, by = "school") %>%
+  select(school_id, school, district_id, district, median_value) %>% 
+  make_median_value_categorical() 
+
+use_data(composite_score,
+         overwrite = TRUE)
+```
+

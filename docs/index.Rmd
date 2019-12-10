@@ -1,0 +1,143 @@
+---
+title: "Washington County Map"
+output:
+  distill::distill_article:
+    toc: FALSE
+    style: style.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      error = FALSE,
+                      out.width = "100%",
+                      fig.height = 6)
+```
+
+```{r packages}
+library(tidyverse)
+library(tidycensus)
+library(janitor)
+library(scales)
+library(mapdeck)
+library(devtools)
+
+load_all()
+```
+
+# Introduction
+
+I'll add more text that explains the maps here. Things like:
+
+- Dots are schools
+- Hover over any area to get more info
+- Issues with data
+
+# Race/Ethnicity
+
+The following map shows the composite race/ethnicity measure for all groups. 
+
+```{r, layout="l-page"}
+race_ethnicity_composite %>% 
+  make_map()
+```
+
+
+## Black
+
+
+```{r, layout="l-page"}
+race_ethnicity_black %>% 
+  make_map()
+```
+
+## American Indian and Alaska Native
+
+```{r, layout="l-page"}
+race_ethnicity_aian %>% 
+  make_map()
+```
+
+## Asian
+
+```{r, layout="l-page"}
+race_ethnicity_asian %>% 
+  make_map()
+```
+
+## Caucasian
+
+```{r, layout="l-page"}
+race_ethnicity_white %>% 
+  make_map()
+```
+
+## Hispanic
+
+```{r, layout="l-page"}
+race_ethnicity_latino %>% 
+  make_map()
+```
+
+# Poverty
+
+
+
+## 100% FPL
+
+```{r, layout="l-page"}
+children_in_poverty_100_fpl %>%
+  make_map()
+```
+
+## 200% FPL
+
+```{r, layout="l-page"}
+children_in_poverty_200_fpl %>%
+  make_map()
+```
+
+
+# Single-Parent Families
+
+```{r, layout="l-page"}
+single_parent %>%
+  make_map()
+```
+
+# SNAP
+
+```{r, layout="l-page"}
+snap %>%
+  make_map()
+```
+
+# Disability (EI/ESCE)
+
+As table if just at district level
+Mapped if at elementary school catchment area
+
+```{r, layout="l-page"}
+disability %>%
+  make_map()
+```
+
+# Homelessness
+
+```{r, layout="l-page"}
+homeless %>%
+  make_map()
+```
+
+# Composite Map
+
+Calculate score with:
+
+- Racial/ethnic diversity
+- 100% FPL
+- Single-parent families
+- SNAP
+- Rent burden
+
+
